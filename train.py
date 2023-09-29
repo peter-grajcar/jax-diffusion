@@ -92,11 +92,9 @@ def train_step(state: TrainState, batch: tuple[jnp.ndarray, jnp.ndarray]):
     signal_rates, noise_rates = diffusion_rates(times)
     noisy_images = signal_rates * images + noise_rates * noises
 
-    variables = {"params": state.params, "batch_stats": state.batch_stats}
-
     def loss_fn(params):
         predicted_noises, updates = state.apply_fn(
-            variables,
+            {"params": state.params, "batch_stats": state.batch_stats},
             noisy_images,
             conditioning,
             noise_rates,
@@ -112,15 +110,11 @@ def train_step(state: TrainState, batch: tuple[jnp.ndarray, jnp.ndarray]):
     state = state.replace(batch_stats=updates["batch_stats"])
 
     # Exponential moving average update
-    ema_variables, ema_variables_treedef = jax.tree_util.tree_flatten(state.ema_variables)
-    variables, _ = jax.tree_util.tree_flatten(variables)
-
-    @partial(jax.pmap)
-    def ema_update(ema_variable, variable):
-        return ema_variable * state.ema_momentum + variable * (1 - state.ema_momentum)
-    ema_update(ema_variables, variables)
-
-    ema_variables = jax.tree_util.tree_unflatten(ema_variables_treedef, ema_variables)
+    optax.incremental_update(
+        {"params": state.params, "batch_stats": state.batch_stats},
+        state.ema_variables,
+        state.ema_momentum
+    )
     state = state.replace(ema_variables=ema_variables)
 
     return state, loss
