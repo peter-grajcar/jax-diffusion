@@ -32,7 +32,7 @@ class ResidualBlock(nn.Module):
 
         hidden = nn.BatchNorm(use_running_average=not train)(hidden)
         hidden = nn.swish(hidden)
-        hidden = nn.Conv(self.width, (3, 3), padding="SAME", use_bias=False, kernel_init=nn.initializers.zeros_init())(hidden)
+        hidden = nn.Conv(self.width, (3, 3), padding="SAME", use_bias=False, kernel_init=nn.initializers.zeros)(hidden)
 
         hidden += residual
         return hidden
@@ -48,6 +48,7 @@ class DiffusionModel(nn.Module):
     def __call__(self, inputs, conditioning, noise_rates, train=True):
         noise_embeddings = SinusoidalEmbedding(self.channels)(noise_rates)
 
+        inputs = jnp.concatenate([inputs, conditioning], axis=-1)
         hidden = nn.Conv(self.channels, (3, 3), padding="SAME")(inputs)
 
         outputs = []
@@ -72,7 +73,7 @@ class DiffusionModel(nn.Module):
 
         outputs = nn.BatchNorm(use_running_average=not train)(hidden)
         outputs = nn.swish(outputs)
-        outputs = nn.Conv(self.out_channels, (3, 3), padding="SAME", kernel_init=nn.initializers.zeros_init())(outputs)
+        outputs = nn.Conv(self.out_channels, (3, 3), padding="SAME", kernel_init=nn.initializers.zeros)(outputs)
 
         return outputs
 
