@@ -51,18 +51,16 @@ if __name__ == "__main__":
     diffusion_process.append(generated)
 
     print(optax.squared_error(generated, normalised).mean())
-    # print(optax.squared_error(generated, normalised).mean() * std)
-    # print(optax.squared_error(denormalise_images(generated, mean, std), original).mean())
 
     fig, ax = plt.subplots(1, 4)
     vmin, vmax = normalised.min(), normalised.max()
     ax[0].set_title("Original")
-    ax[0].imshow(normalised[0], vmin=vmin, vmax=vmax)
+    ax[0].imshow(normalised[0], vmin=vmin, vmax=vmax, origin="lower")
     ax[1].set_title("Conditioning")
-    ax[1].imshow(augmented[0], vmin=vmin, vmax=vmax)
+    ax[1].imshow(augmented[0], vmin=vmin, vmax=vmax, origin="lower")
     ax[3].set_title("Generated")
-    ax[3].imshow(generated[0], vmin=vmin, vmax=vmax)
-    im = ax[2].imshow(diffusion_process[0][0], vmin=vmin, vmax=vmax)
+    ax[3].imshow(generated[0], vmin=vmin, vmax=vmax, origin="lower")
+    im = ax[2].imshow(diffusion_process[0][0], vmin=vmin, vmax=vmax, origin="lower")
 
     def animate(i):
         ax[2].set_title(f"t = {i / len(diffusion_process):.2f}")
@@ -71,4 +69,4 @@ if __name__ == "__main__":
     ani = animation.FuncAnimation(fig, animate, frames=len(diffusion_process), interval=100)
     plt.tight_layout()
     plt.show()
-    # ani.save("diffusion.gif")
+    ani.save("diffusion.gif")
