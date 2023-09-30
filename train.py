@@ -94,6 +94,8 @@ if __name__ == "__main__":
     key, noise_key = jax.random.split(key)
     dev = (jax.random.normal(noise_key, dev.shape), dev, augment(dev))
 
+    generate = jax.jit(generate, static_argnums=[0, 4])
+
     best_mse = np.inf
     for epoch in range(args.epochs):
         bar = tqdm(
@@ -115,7 +117,7 @@ if __name__ == "__main__":
 
         # Validation
         noise, original, augmented = dev
-        generated = generate(state, noise, augmented, args.sampling_steps)
+        generated, _ = generate(state.apply_fn, state.ema_variables, noise, augmented, args.sampling_steps)
         val_mse = optax.squared_error(original, generated).mean()
         print(f"Validation MSE: {val_mse:.4f}")
 
@@ -130,6 +132,9 @@ if __name__ == "__main__":
                     "params": state.params,
                     "batch_stats": state.batch_stats,
                     "ema_variables": state.ema_variables,
+                    "normalisation_stats": {"mean": mean, "std": std},
+                    "frame_width": dataset.frame_width,
+                    "blur": {"sigma": args.blur_sigma, "kernel_size": args.blur_kernel},
                 },
                 step=state.step,
                 keep=3
