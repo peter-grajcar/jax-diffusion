@@ -20,6 +20,8 @@ from pprint import pprint
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
 parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
+parser.add_argument("--attention_stages", default=0, type=int, help="Number of stages with self attention.")
+parser.add_argument("--attention_heads", default=8, type=int, help="number of self attention heads.")
 parser.add_argument("--channels", default=32, type=int, help="CNN channels in the first stage.")
 parser.add_argument("--dataset", default="oxford_flowers102", type=str, help="Image64 dataset to use.")
 parser.add_argument("--downscale", default=8, type=int, help="Conditional downscale factor.")
@@ -54,6 +56,8 @@ if __name__ == "__main__":
         stage_blocks=args.stage_blocks,
         channels=args.channels,
         out_channels=1,
+        attention_stages=args.attention_stages,
+        attention_heads=args.attention_heads,
     )
     key, init_key = jax.random.split(key)
     variables = model.init(init_key, jnp.ones([1, 64, 64, 1]), jnp.ones([1, 64, 64, 1]), jnp.ones([1, 1, 1, 1]), train=False)
@@ -128,6 +132,8 @@ if __name__ == "__main__":
                 target={
                     "stages": args.stages,
                     "stage_blocks": args.stage_blocks,
+                    "attention_stages": args.attention_stages,
+                    "attention_heads": args.attention_heads,
                     "channels": args.channels,
                     "params": state.params,
                     "batch_stats": state.batch_stats,

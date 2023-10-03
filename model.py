@@ -15,6 +15,24 @@ class SinusoidalEmbedding(nn.Module):
         return embeddings
 
 
+class Attention(nn.Module):
+    num_heads: int
+
+    @nn.compact
+    def __call__(self, inputs, train=True):
+        hidden = nn.BatchNorm(use_running_average=not train)(inputs)
+
+        original_shape = hidden.shape
+        hidden = jnp.reshape(hidden, (original_shape[0], original_shape[1] * original_shape[2], original_shape[3]))
+
+        hidden = nn.MultiHeadDotProductAttention(num_heads=self.num_heads, use_bias=False)(hidden, hidden, deterministic=not train)
+
+        hidden = jnp.reshape(hidden, original_shape)
+
+        hidden += inputs
+        return hidden
+
+
 class ResidualBlock(nn.Module):
     width: int
 
@@ -43,6 +61,8 @@ class DiffusionModel(nn.Module):
     stage_blocks: int
     channels: int
     out_channels: int = 3
+    attention_stages: int = 0
+    attention_heads: int = 8
 
     @nn.compact
     def __call__(self, inputs, conditioning, noise_rates, train=True):
@@ -57,13 +77,22 @@ class DiffusionModel(nn.Module):
                 hidden = ResidualBlock(self.channels << i)(hidden, noise_embeddings, train)
                 outputs.append(hidden)
 
+            if i >= self.stages - self.attention_stages:
+                hidden = Attention(num_heads=self.attention_heads)(hidden, train)
+
             hidden = nn.Conv(self.channels << (i + 1), (3, 3), strides=(2, 2), padding="SAME")(hidden)
 
         for _ in range(self.stage_blocks):
             hidden = ResidualBlock(self.channels << self.stages)(hidden, noise_embeddings, train)
 
+        if self.attention_stages > 0:
+            hidden = Attention(num_heads=self.attention_heads)(hidden, train)
+
         for i in reversed(range(self.stages)):
             hidden = nn.ConvTranspose(self.channels << i, (4, 4), strides=(2, 2), padding="SAME")(hidden)
+
+            if i >= self.stages - self.attention_stages:
+                hidden = Attention(num_heads=self.attention_heads)(hidden, train)
 
             for _ in range(self.stage_blocks):
                 hidden = jnp.concatenate([hidden, outputs.pop()], axis=-1)

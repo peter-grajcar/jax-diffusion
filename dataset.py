@@ -13,26 +13,33 @@ N_MELS = 100
 F_MIN = 0
 F_MAX = 12000
 
+MEL_BASIS = librosa.filters.mel(sr=SAMPLING_RATE, n_fft=N_FFT, n_mels=N_MELS, fmin=F_MIN, fmax=F_MAX)
+HANN_WINDOW = librosa.filters.get_window("hann", WIN_SIZE, fftbins=True)
+
 
 def dynamic_range_compression(x, c=1, clip_val=1e-5):
     return np.log(np.maximum(x, clip_val) * c)
 
 
 def get_mel_spectrum(audio_path: str) -> np.ndarray:
-    audio, _ = librosa.load(audio_path, sr=SAMPLING_RATE)
+    y, _ = librosa.load(audio_path, sr=SAMPLING_RATE)
+    y = np.pad(y, (int((N_FFT - HOP_LENGTH) / 2), int((N_FFT - HOP_LENGTH) / 2)), mode="reflect")
 
-    spectrum = librosa.feature.melspectrogram(
-        y=audio,
-        sr=SAMPLING_RATE,
-        n_mels=N_MELS,
+    spec = librosa.stft(
+        y,
         n_fft=N_FFT,
         hop_length=HOP_LENGTH,
         win_length=WIN_SIZE,
-        fmin=F_MIN,
-        fmax=F_MAX,
+        window=HANN_WINDOW,
+        center=False,
+        pad_mode="reflect"
     )
+    spec = np.abs(spec)
 
-    return dynamic_range_compression(spectrum)
+    spec = np.matmul(MEL_BASIS, spec)
+    spec = dynamic_range_compression(spec)
+
+    return spec
 
 
 class MelDataset(IterableDataset):

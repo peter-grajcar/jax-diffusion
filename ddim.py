@@ -29,8 +29,7 @@ def normalise_images(images: jnp.ndarray, mean: float, std: float):
 
 @jax.jit
 def denormalise_images(images: jnp.ndarray, mean: float, std: float):
-    images = images * std + mean
-    return images
+    return images * std + mean
 
 
 @jax.jit

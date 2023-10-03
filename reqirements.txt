@@ -6,4 +6,4 @@ optax
 torchdata
 tqdm
 dm_pix
-lirosa
+librosa
