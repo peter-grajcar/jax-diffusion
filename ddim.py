@@ -4,7 +4,6 @@ import jax.numpy as jnp
 from typing import Any, Callable
 from tqdm.auto import tqdm
 from functools import partial
-from model import DiffusionModel
 from flax.training import train_state
 
 class TrainState(train_state.TrainState):
@@ -21,24 +20,12 @@ def diffusion_rates(times: jnp.ndarray):
     noise_rates = jnp.sin((1 - times) * starting_angle + times * final_angle)[..., None, None, None]
     return signal_rates, noise_rates
 
-
 @jax.jit
-def normalise_images(images: jnp.ndarray, mean: float, std: float):
-    return (images - mean) / std
+def train_step(state: TrainState, batch: tuple[jnp.ndarray, jnp.array, jnp.ndarray], mask: jnp.ndarray=None):
+    images, noises, conditioning = batch
 
-
-@jax.jit
-def denormalise_images(images: jnp.ndarray, mean: float, std: float):
-    return images * std + mean
-
-
-@jax.jit
-def train_step(state: TrainState, batch: tuple[jnp.ndarray, jnp.ndarray]):
-    images, conditioning = batch
-
-    key, noise_key, time_key = jax.random.split(state.key, 3)
+    key, time_key = jax.random.split(state.key, 2)
     state = state.replace(key=key)
-    noises = jax.random.normal(noise_key, images.shape)
     times = jax.random.uniform(time_key, images.shape[:1])
 
     signal_rates, noise_rates = diffusion_rates(times)
@@ -53,7 +40,10 @@ def train_step(state: TrainState, batch: tuple[jnp.ndarray, jnp.ndarray]):
             train=True,
             mutable=["batch_stats"],
         )
-        loss = jnp.abs(noises - predicted_noises).mean()
+        loss = jnp.abs(noises - predicted_noises)
+        if mask is not None:
+            loss = loss * mask
+        loss = loss.mean()
         return loss, (predicted_noises, updates)
 
     # Gradient update

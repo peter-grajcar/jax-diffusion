@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import sys
+import jax
+import jax.numpy as jnp
 import librosa
 import numpy as np
 from torch.utils.data import IterableDataset
@@ -15,6 +17,16 @@ F_MAX = 12000
 
 MEL_BASIS = librosa.filters.mel(sr=SAMPLING_RATE, n_fft=N_FFT, n_mels=N_MELS, fmin=F_MIN, fmax=F_MAX)
 HANN_WINDOW = librosa.filters.get_window("hann", WIN_SIZE, fftbins=True)
+
+
+@jax.jit
+def normalise_images(images: jnp.ndarray, mean: float, std: float):
+    return (images - mean) / std
+
+
+@jax.jit
+def denormalise_images(images: jnp.ndarray, mean: float, std: float):
+    return images * std + mean
 
 
 def dynamic_range_compression(x, c=1, clip_val=1e-5):

@@ -6,9 +6,9 @@ import jax
 import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
-from ddim import TrainState, train_step, generate, normalise_images, denormalise_images
-from model import DiffusionModel
-from dataset import MelDataset, numpy_collate
+from ddim import TrainState, train_step, generate
+from ddim_model import DiffusionModel
+from dataset import MelDataset, numpy_collate, normalise_images, denormalise_images
 from functools import partial
 from itertools import islice
 from torch.utils.data import DataLoader, random_split
@@ -36,16 +36,42 @@ parser.add_argument("--stage_blocks", default=2, type=int, help="ResNet blocks p
 parser.add_argument("--stages", default=2, type=int, help="Stages to use.")
 parser.add_argument("--blur_sigma", default=3, type=float, help="Gaussian blur sigma.")
 parser.add_argument("--blur_kernel", default=5, type=int, help="Gaussian blur kernel size.")
+parser.add_argument("--mask_width", default=3, type=int, help="Mask width.")
 parser.add_argument("--ckpt_dir", default="ckpt", type=str, help="Checkpoint directory.")
 
-def augment_single(img: jnp.array, sigma: float, kernel_size: int):
+def blur_single(img: jnp.array, sigma: float, kernel_size: int):
     img = jnp.pad(img, ((kernel_size // 2, kernel_size // 2), (kernel_size // 2, kernel_size // 2), (0, 0)), mode="edge")
     return dm_pix.gaussian_blur(img, sigma, kernel_size, padding="VALID")
+
+def _mask_single(img: jnp.ndarray, noise: jnp.ndarray, mask_width: int):
+    # img: [height, width, channels]
+    width = img.shape[1]
+    mask_pos = width // 2
+    return jnp.concatenate([
+        jnp.where(jnp.abs(jnp.arange(width)[None, :, None] - mask_pos) < mask_width, noise, img),
+        jnp.where(jnp.abs(jnp.arange(width)[None, :, None] - mask_pos) < mask_width, jnp.ones_like(img), jnp.zeros_like(img)),
+    ], axis=-1)
+
+def mask_single(img: jnp.ndarray, key: jax.random.PRNGKey, mask_width: int):
+    # img: [height, width, channels]
+    width = img.shape[1]
+    mask_pos = width // 2
+    key_a, key_b = jax.random.split(key)
+    uniform = jax.random.uniform(key_a, img.shape)
+    normal = jax.random.normal(key_b, img.shape)
+    middle = jnp.abs(jnp.arange(width)[None, :, None] - mask_pos) < mask_width
+    return jnp.where(jnp.logical_and(middle, uniform > 0.2), normal, img)
+
 
 if __name__ == "__main__":
     args = parser.parse_args([] if "__file__" not in globals() else None)
 
-    augment = jax.vmap(partial(augment_single, sigma=args.blur_sigma, kernel_size=args.blur_kernel))
+    # augment = jax.vmap(partial(mask_single, mask_width=args.mask_width))
+    augment = [
+        jax.vmap(partial(blur_single, sigma=5, kernel_size=5)),
+        jax.vmap(partial(blur_single, sigma=5, kernel_size=7)),
+        jax.vmap(partial(blur_single, sigma=5, kernel_size=11)),
+    ]
 
     np.random.seed(args.seed)
     key = jax.random.PRNGKey(args.seed)
@@ -60,7 +86,7 @@ if __name__ == "__main__":
         attention_heads=args.attention_heads,
     )
     key, init_key = jax.random.split(key)
-    variables = model.init(init_key, jnp.ones([1, 64, 64, 1]), jnp.ones([1, 64, 64, 1]), jnp.ones([1, 1, 1, 1]), train=False)
+    variables = model.init(init_key, jnp.ones([1, 64, 64, 1]), jnp.ones([1, 64, 64, len(augment)]), jnp.ones([1, 1, 1, 1]), train=False)
     params = variables["params"]
     batch_stats = variables["batch_stats"]
 
@@ -95,8 +121,10 @@ if __name__ == "__main__":
     dev = next(iter(data_loader))
     dev = dev[..., None]
     dev = normalise_images(dev, mean, std)
-    key, noise_key = jax.random.split(key)
-    dev = (jax.random.normal(noise_key, dev.shape), dev, augment(dev))
+    key, noise_key, augment_key = jax.random.split(key, 3)
+    dev_noise = jax.random.normal(noise_key, dev.shape)
+    augmented = jnp.concatenate([f(dev) for f in augment], axis=-1)
+    dev = (dev_noise, dev, augmented)
 
     generate = jax.jit(generate, static_argnums=[0, 4])
 
@@ -112,10 +140,12 @@ if __name__ == "__main__":
         for images in bar:
             images = images[..., None]
             images = normalise_images(images, mean, std)
-            augmented = augment(images)
+            key, augment_key, noise_key = jax.random.split(key, 3)
+            noises = jax.random.normal(noise_key, images.shape)
+            augmented = jnp.concatenate([f(images) for f in augment], axis=-1)
 
             # print(state.params["ResidualBlock_0"]["Conv_1"]["kernel"][0])
-            batch = (images, augmented)
+            batch = (images, noises, augmented)
             state, loss = train_step(state, batch)
             bar.set_postfix(loss=f"{loss:.4f}")
 
@@ -140,7 +170,8 @@ if __name__ == "__main__":
                     "ema_variables": state.ema_variables,
                     "normalisation_stats": {"mean": mean, "std": std},
                     "frame_width": dataset.frame_width,
-                    "blur": {"sigma": args.blur_sigma, "kernel_size": args.blur_kernel},
+                    # "blur": {"sigma": args.blur_sigma, "kernel_size": args.blur_kernel},
+                    # "mask_width": args.mask_width,
                 },
                 step=state.step,
                 keep=3

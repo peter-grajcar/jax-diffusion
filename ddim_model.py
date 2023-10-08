@@ -19,7 +19,7 @@ class Attention(nn.Module):
     num_heads: int
 
     @nn.compact
-    def __call__(self, inputs, train=True):
+    def __call__(self, inputs, conditioning, train=True):
         hidden = nn.BatchNorm(use_running_average=not train)(inputs)
 
         original_shape = hidden.shape
@@ -78,7 +78,7 @@ class DiffusionModel(nn.Module):
                 outputs.append(hidden)
 
             if i >= self.stages - self.attention_stages:
-                hidden = Attention(num_heads=self.attention_heads)(hidden, train)
+                hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
 
             hidden = nn.Conv(self.channels << (i + 1), (3, 3), strides=(2, 2), padding="SAME")(hidden)
 
@@ -86,13 +86,13 @@ class DiffusionModel(nn.Module):
             hidden = ResidualBlock(self.channels << self.stages)(hidden, noise_embeddings, train)
 
         if self.attention_stages > 0:
-            hidden = Attention(num_heads=self.attention_heads)(hidden, train)
+            hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
 
         for i in reversed(range(self.stages)):
             hidden = nn.ConvTranspose(self.channels << i, (4, 4), strides=(2, 2), padding="SAME")(hidden)
 
             if i >= self.stages - self.attention_stages:
-                hidden = Attention(num_heads=self.attention_heads)(hidden, train)
+                hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
 
             for _ in range(self.stage_blocks):
                 hidden = jnp.concatenate([hidden, outputs.pop()], axis=-1)
