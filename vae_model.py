@@ -8,7 +8,7 @@ class Attention(nn.Module):
     num_heads: int
 
     @nn.compact
-    def __call__(self, inputs, conditioning, train=True):
+    def __call__(self, inputs, train=True):
         hidden = nn.BatchNorm(use_running_average=not train)(inputs)
 
         original_shape = hidden.shape
@@ -55,7 +55,7 @@ class Encoder(nn.Module):
                 hidden = ResidualBlock(self.channels << i)(hidden, train)
 
             if i >= self.stages - self.attention_stages:
-                hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
+                hidden = Attention(num_heads=self.attention_heads)(hidden, train)
 
             hidden = nn.Conv(self.channels << (i + 1), (3, 3), strides=(2, 2), padding="SAME")(hidden)
 
@@ -86,7 +86,7 @@ class Decoder(nn.Module):
             hidden = nn.ConvTranspose(self.channels << i, (4, 4), strides=(2, 2), padding="SAME")(hidden)
 
             if i >= self.stages - self.attention_stages:
-                hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
+                hidden = Attention(num_heads=self.attention_heads)(hidden, train)
 
             for _ in range(self.stage_blocks):
                 hidden = ResidualBlock(self.channels << i)(hidden, train)
