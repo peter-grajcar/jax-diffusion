@@ -37,6 +37,34 @@ class ResidualBlock(nn.Module):
         return hidden
 
 
+class Downsample(nn.Module):
+    factor: tuple[int, int]
+    use_conv: bool = False
+
+    @nn.compact
+    def __call__(self, inputs):
+        if self.use_conv:
+            hidden = nn.Conv(inputs.shape[-1], (3, 3), strides=self.factor, padding="SAME")(inputs)
+        else:
+            hidden = nn.avg_pool(inputs, self.factor, strides=self.factor, padding="SAME")
+        return hidden
+
+class Upsample(nn.Module):
+    factor: tuple[int, int]
+    use_conv: bool = False
+
+    @nn.compact
+    def __call__(self, inputs):
+        hidden = jax.image.resize(
+            inputs,
+            [inputs.shape[0], inputs.shape[1] * self.factor[0], inputs.shape[2] * self.factor[1], inputs.shape[3]],
+             method="nearest"
+        )
+        if self.use_conv:
+            hidden = nn.Conv(hidden.shape[-1], (3, 3), padding="SAME")(hidden)
+        return hidden
+
+
 class Encoder(nn.Module):
     z_dim: int
     channels: int
@@ -50,18 +78,18 @@ class Encoder(nn.Module):
         hidden = nn.Conv(self.channels, (3, 3), padding="SAME")(inputs)
 
         # Downsampling
-        for i in range(self.stages):
+        for i, factor in enumerate(self.stages):
             for _ in range(self.stage_blocks):
                 hidden = ResidualBlock(self.channels << i)(hidden, train)
 
-            if i >= self.stages - self.attention_stages:
+            if i >= len(self.stages) - self.attention_stages:
                 hidden = Attention(num_heads=self.attention_heads)(hidden, train)
 
-            hidden = nn.Conv(self.channels << (i + 1), (3, 3), strides=(2, 2), padding="SAME")(hidden)
+            hidden = Downsample(factor, use_conv=True)(hidden)
 
         # Middle
         for _ in range(self.stage_blocks):
-            hidden = ResidualBlock(self.channels << self.stages)(hidden, train)
+            hidden = ResidualBlock(self.channels << len(self.stages))(hidden, train)
 
         # Outputs
         mean = nn.Conv(self.z_dim, (3, 3), padding="SAME", name=f"Encoder/Mean")(hidden)
@@ -82,10 +110,10 @@ class Decoder(nn.Module):
     def __call__(self, inputs, train=False):
         hidden = nn.Conv(self.channels, (1, 1), padding="SAME")(inputs)
 
-        for i in reversed(range(self.stages)):
-            hidden = nn.ConvTranspose(self.channels << i, (4, 4), strides=(2, 2), padding="SAME")(hidden)
+        for i, factor in reversed(list(enumerate(self.stages))):
+            hidden = Upsample(factor, use_conv=True)(hidden)
 
-            if i >= self.stages - self.attention_stages:
+            if i >= len(self.stages) - self.attention_stages:
                 hidden = Attention(num_heads=self.attention_heads)(hidden, train)
 
             for _ in range(self.stage_blocks):

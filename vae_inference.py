@@ -15,20 +15,19 @@ if __name__ == "__main__":
 
     ckpt = checkpoints.restore_checkpoint("vae_ckpt", target=None)
 
+    config = ckpt["config"]
+
     vae = VAE(
-        ckpt["z_dim"],
-        ckpt["channels"],
-        ckpt["out_channels"],
-        ckpt["stages"],
-        ckpt["stage_blocks"],
-        ckpt["attention_stages"],
-        ckpt["attention_heads"],
+        config.z_dim,
+        confi.channels,
+        1,
+        stages,
+        config.stage_blocks,
+        config.attention_stages,
+        config.attention_heads,
     )
 
-    variables = {
-        "params": ckpt["params"],
-        "batch_stats": ckpt["batch_stats"],
-    }
+    variables = ckpt["ema_variables"]
     mean, std = ckpt["normalisation_stats"]["mean"], ckpt["normalisation_stats"]["std"]
 
     dataset = MelDataset("data/dataset.npz")

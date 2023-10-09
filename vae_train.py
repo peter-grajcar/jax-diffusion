@@ -11,6 +11,7 @@ from itertools import islice
 from vae_model import VAE
 from flax.training import checkpoints
 from torch.utils.data import DataLoader
+from config import load_config
 
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
@@ -18,13 +19,9 @@ parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
 parser.add_argument("--epoch_batches", default=1_000, type=int, help="Batches per epoch.")
 parser.add_argument("--epochs", default=100, type=int, help="Number of epochs.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
-parser.add_argument("--stages", default=2, type=int, help="ResNet blocks per stage.")
-parser.add_argument("--stage_blocks", default=2, type=int, help="ResNet blocks per stage.")
-parser.add_argument("--channels", default=8, type=int, help="Number of channels.")
-parser.add_argument("--attention_stages", default=0, type=int, help="Number of stages with self attention.")
-parser.add_argument("--attention_heads", default=8, type=int, help="number of self attention heads.")
-parser.add_argument("--z_dim", default=128, type=int, help="Stages to use.")
+parser.add_argument("--ema_momentum", default=0.9, type=float, help="Exponential moving average momentum.")
 parser.add_argument("--ckpt_dir", default="vae_ckpt", type=str, help="Checkpoint directory.")
+parser.add_argument("--config", default="vae_config.json", type=str, help="Checkpoint directory.")
 
 
 if __name__ == "__main__":
@@ -33,15 +30,21 @@ if __name__ == "__main__":
     key = jax.random.PRNGKey(args.seed)
     np.random.seed(args.seed)
 
+    config = load_config(args.config)
+
     vae = VAE(
-        args.z_dim,
-        args.channels,
+        config.z_dim,
+        config.channels,
         1,
-        args.stages,
-        args.stage_blocks,
-        args.attention_stages,
-        args.attention_heads,
+        config.stages,
+        config.stage_blocks,
+        config.attention_stages,
+        config.attention_heads,
     )
+
+    key, init_key, dummy_key = jax.random.split(key, 3)
+    table = vae.tabulate(init_key, jnp.ones([1, 100, 32, 1]), dummy_key, sample_posterior=True, train=True, depth=2)
+    print(table)
 
     # Init model params
     key, init_key, dummy_key = jax.random.split(key, 3)
@@ -58,8 +61,10 @@ if __name__ == "__main__":
         params=variables["params"],
         tx=optimiser,
         key=train_key,
-        z_dim=args.z_dim,
+        z_dim=config.z_dim,
         batch_stats=variables["batch_stats"],
+        ema_variables=variables.copy(),
+        ema_momentum=args.ema_momentum,
     )
 
     # Load dataset
@@ -97,13 +102,8 @@ if __name__ == "__main__":
                 target={
                     "params": state.params,
                     "batch_stats": state.batch_stats,
-                    "z_dim": state.z_dim,
-                    "stages": args.stages,
-                    "stage_blocks": args.stage_blocks,
-                    "attention_stages": args.attention_stages,
-                    "attention_heads": args.attention_heads,
-                    "channels": args.channels,
-                    "out_channels": 1,
+                    "ema_variables": state.ema_variables,
+                    "config": config,
                     "normalisation_stats": {"mean": mean, "std": std},
                 },
                 step=state.step

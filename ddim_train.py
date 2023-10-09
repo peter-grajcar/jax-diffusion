@@ -16,29 +16,23 @@ from torch.utils.data import DataLoader, random_split
 from flax.training import checkpoints
 from tqdm.auto import tqdm
 from pprint import pprint
+from config import load_config
 
 
 parser = argparse.ArgumentParser()
 # These arguments will be set appropriately by ReCodEx, even if you change them.
 parser.add_argument("--batch_size", default=64, type=int, help="Batch size.")
-parser.add_argument("--attention_stages", default=0, type=int, help="Number of stages with self attention.")
-parser.add_argument("--attention_heads", default=8, type=int, help="number of self attention heads.")
-parser.add_argument("--channels", default=32, type=int, help="CNN channels in the first stage.")
 parser.add_argument("--dataset", default="oxford_flowers102", type=str, help="Image64 dataset to use.")
-parser.add_argument("--downscale", default=8, type=int, help="Conditional downscale factor.")
 parser.add_argument("--ema", default=0.999, type=float, help="Exponential moving average momentum.")
 parser.add_argument("--epoch_batches", default=1_000, type=int, help="Batches per epoch.")
 parser.add_argument("--epochs", default=100, type=int, help="Number of epochs.")
-parser.add_argument("--loss", default="MeanAbsoluteError", type=str, help="Loss object to use.")
-parser.add_argument("--plot_each", default=None, type=int, help="Plot generated images every such epoch.")
 parser.add_argument("--sampling_steps", default=50, type=int, help="Sampling steps.")
 parser.add_argument("--seed", default=42, type=int, help="Random seed.")
-parser.add_argument("--stage_blocks", default=2, type=int, help="ResNet blocks per stage.")
-parser.add_argument("--stages", default=2, type=int, help="Stages to use.")
 parser.add_argument("--blur_sigma", default=3, type=float, help="Gaussian blur sigma.")
 parser.add_argument("--blur_kernel", default=5, type=int, help="Gaussian blur kernel size.")
 parser.add_argument("--mask_width", default=3, type=int, help="Mask width.")
 parser.add_argument("--ckpt_dir", default="ckpt", type=str, help="Checkpoint directory.")
+parser.add_argument("--config", default="ddim_config.json", type=str, help="Config file.")
 
 def blur_single(img: jnp.array, sigma: float, kernel_size: int):
     img = jnp.pad(img, ((kernel_size // 2, kernel_size // 2), (kernel_size // 2, kernel_size // 2), (0, 0)), mode="edge")
@@ -66,21 +60,19 @@ def mask_single(img: jnp.ndarray, key: jax.random.PRNGKey, mask_width: int):
 def load_vae(ckpt_dir):
     ckpt = checkpoints.restore_checkpoint(ckpt_dir, target=None)
 
+    config = ckpt["config"]
+
     vae = VAE(
-        ckpt["z_dim"],
-        ckpt["channels"],
-        ckpt["out_channels"],
-        ckpt["stages"],
-        ckpt["stage_blocks"],
-        ckpt["attention_stages"],
-        ckpt["attention_heads"],
+        config.z_dim,
+        config.channels,
+        1,
+        stages,
+        config.stage_blocks,
+        config.attention_stages,
+        config.attention_heads,
     )
 
-    variables = {
-        "params": ckpt["params"],
-        "batch_stats": ckpt["batch_stats"],
-    }
-    return vae, variables
+    return vae, ckpt["ema_variables"]
 
 if __name__ == "__main__":
     args = parser.parse_args([] if "__file__" not in globals() else None)
@@ -96,15 +88,18 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     key = jax.random.PRNGKey(args.seed)
 
+    config = load_config(args.config)
+
     # Initialise model
     model = DiffusionModel(
-        stages=args.stages,
-        stage_blocks=args.stage_blocks,
-        channels=args.channels,
+        stages=config.stages,
+        stage_blocks=config.stage_blocks,
+        channels=config.channels,
         out_channels=1,
-        attention_stages=args.attention_stages,
-        attention_heads=args.attention_heads,
+        attention_stages=config.attention_stages,
+        attention_heads=config.attention_heads,
     )
+
     key, init_key = jax.random.split(key)
     variables = model.init(init_key, jnp.ones([1, 64, 64, 1]), jnp.ones([1, 64, 64, 1]), jnp.ones([1, 1, 1, 1]), train=False)
     params = variables["params"]
@@ -182,11 +177,7 @@ if __name__ == "__main__":
             checkpoints.save_checkpoint(
                 args.ckpt_dir,
                 target={
-                    "stages": args.stages,
-                    "stage_blocks": args.stage_blocks,
-                    "attention_stages": args.attention_stages,
-                    "attention_heads": args.attention_heads,
-                    "channels": args.channels,
+                    "config": config,
                     "params": state.params,
                     "batch_stats": state.batch_stats,
                     "ema_variables": state.ema_variables,

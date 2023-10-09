@@ -9,6 +9,8 @@ class TrainState(train_state.TrainState):
     batch_stats: dict
     key: jax.random.PRNGKey
     z_dim: int
+    ema_variables: dict
+    ema_momentum: float
 
 @jax.jit
 def kl_divergence(mean, log_var):
@@ -39,6 +41,14 @@ def train_step(state, batch):
     state = state.apply_gradients(grads=grads)
     state = state.replace(batch_stats=updates["batch_stats"])
     state = state.replace(key=key)
+
+    # Exponential moving average update
+    ema_variables = optax.incremental_update(
+        {"params": state.params, "batch_stats": state.batch_stats},
+        state.ema_variables,
+        state.ema_momentum
+    )
+    state = state.replace(ema_variables=ema_variables)
 
     return state, loss, reconstruction_loss, latent_loss
 
