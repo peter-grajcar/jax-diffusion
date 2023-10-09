@@ -135,6 +135,7 @@ class VAE(nn.Module):
     stage_blocks: int
     attention_stages: int
     attention_heads: int
+    scale_with_conv: bool
 
     def setup(self):
         self.encoder = Encoder(
@@ -143,7 +144,8 @@ class VAE(nn.Module):
             self.stages,
             self.stage_blocks,
             self.attention_stages,
-            self.attention_heads
+            self.attention_heads,
+            self.scale_with_conv
         )
         self.decoder = Decoder(
             self.z_dim,
@@ -152,7 +154,8 @@ class VAE(nn.Module):
             self.stages,
             self.stage_blocks,
             self.attention_stages,
-            self.attention_heads
+            self.attention_heads,
+            self.scale_with_conv
         )
 
     def sample(self, mean, log_var, key):
