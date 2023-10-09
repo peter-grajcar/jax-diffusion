@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 from ddim import TrainState, train_step, generate
 from ddim_model import DiffusionModel
+from vae_model import VAE
 from dataset import MelDataset, numpy_collate, normalise_images, denormalise_images
 from functools import partial
 from itertools import islice
@@ -62,16 +63,35 @@ def mask_single(img: jnp.ndarray, key: jax.random.PRNGKey, mask_width: int):
     middle = jnp.abs(jnp.arange(width)[None, :, None] - mask_pos) < mask_width
     return jnp.where(jnp.logical_and(middle, uniform > 0.2), normal, img)
 
+def load_vae(ckpt_dir):
+    ckpt = checkpoints.restore_checkpoint(ckpt_dir, target=None)
+
+    vae = VAE(
+        ckpt["z_dim"],
+        ckpt["channels"],
+        ckpt["out_channels"],
+        ckpt["stages"],
+        ckpt["stage_blocks"],
+        ckpt["attention_stages"],
+        ckpt["attention_heads"],
+    )
+
+    variables = {
+        "params": ckpt["params"],
+        "batch_stats": ckpt["batch_stats"],
+    }
+    return vae, variables
 
 if __name__ == "__main__":
     args = parser.parse_args([] if "__file__" not in globals() else None)
 
     # augment = jax.vmap(partial(mask_single, mask_width=args.mask_width))
-    augment = [
-        jax.vmap(partial(blur_single, sigma=5, kernel_size=5)),
-        jax.vmap(partial(blur_single, sigma=5, kernel_size=7)),
-        jax.vmap(partial(blur_single, sigma=5, kernel_size=11)),
-    ]
+    # augment = [
+    #    jax.vmap(partial(blur_single, sigma=5, kernel_size=5)),
+    #    jax.vmap(partial(blur_single, sigma=5, kernel_size=7)),
+    #    jax.vmap(partial(blur_single, sigma=5, kernel_size=11)),
+    #]
+    vae, vae_variables = load_vae("vae_ckpt")
 
     np.random.seed(args.seed)
     key = jax.random.PRNGKey(args.seed)
@@ -86,7 +106,7 @@ if __name__ == "__main__":
         attention_heads=args.attention_heads,
     )
     key, init_key = jax.random.split(key)
-    variables = model.init(init_key, jnp.ones([1, 64, 64, 1]), jnp.ones([1, 64, 64, len(augment)]), jnp.ones([1, 1, 1, 1]), train=False)
+    variables = model.init(init_key, jnp.ones([1, 64, 64, 1]), jnp.ones([1, 64, 64, 1]), jnp.ones([1, 1, 1, 1]), train=False)
     params = variables["params"]
     batch_stats = variables["batch_stats"]
 
@@ -123,7 +143,8 @@ if __name__ == "__main__":
     dev = normalise_images(dev, mean, std)
     key, noise_key, augment_key = jax.random.split(key, 3)
     dev_noise = jax.random.normal(noise_key, dev.shape)
-    augmented = jnp.concatenate([f(dev) for f in augment], axis=-1)
+    # augmented = jnp.concatenate([f(dev) for f in augment], axis=-1)
+    augmented, _, _ = vae.apply(vae_variables, dev, augment_key, sample_posterior=False, train=False)
     dev = (dev_noise, dev, augmented)
 
     generate = jax.jit(generate, static_argnums=[0, 4])
@@ -142,7 +163,8 @@ if __name__ == "__main__":
             images = normalise_images(images, mean, std)
             key, augment_key, noise_key = jax.random.split(key, 3)
             noises = jax.random.normal(noise_key, images.shape)
-            augmented = jnp.concatenate([f(images) for f in augment], axis=-1)
+            # augmented = jnp.concatenate([f(images) for f in augment], axis=-1)
+            augmented, _, _ = vae.apply(vae_variables, images, augment_key, sample_posterior=False, train=False)
 
             # print(state.params["ResidualBlock_0"]["Conv_1"]["kernel"][0])
             batch = (images, noises, augmented)

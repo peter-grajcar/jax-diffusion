@@ -6,12 +6,12 @@ import numpy as np
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from ddim_train import blur_single
+from ddim_train import blur_single, load_vae
 from functools import partial
 from itertools import chain, repeat
-from ddim import TrainState, generate, normalise_images, denormalise_images
+from ddim import TrainState, generate
 from ddim_model import DiffusionModel
-from dataset import get_mel_spectrum
+from dataset import get_mel_spectrum, normalise_images, denormalise_images
 from flax.training import checkpoints
 
 
@@ -72,14 +72,13 @@ if __name__ == "__main__":
 
     # sigma=ckpt["blur"]["sigma"]
     # kernel_size=ckpt["blur"]["kernel_size"]
-    augment = [
-        jax.vmap(partial(blur_single, sigma=5, kernel_size=5)),
-        jax.vmap(partial(blur_single, sigma=5, kernel_size=7)),
-        jax.vmap(partial(blur_single, sigma=5, kernel_size=11)),
-    ]
+    # augment = [
+    #    jax.vmap(partial(blur_single, sigma=5, kernel_size=5)),
+    #    jax.vmap(partial(blur_single, sigma=5, kernel_size=7)),
+    #    jax.vmap(partial(blur_single, sigma=5, kernel_size=11)),
+    #]
+    vae, vae_variables = load_vae("vae_ckpt-3")
 
-
-    print(ckpt["attention_stages"], ckpt["attention_heads"])
     model = DiffusionModel(
         stages=ckpt["stages"],
         stage_blocks=ckpt["stage_blocks"],
@@ -103,9 +102,10 @@ if __name__ == "__main__":
     print(mean, std)
 
     normalised = normalise_images(original, mean, std)
-    key, noise_key = jax.random.split(key, 2)
+    key, noise_key, augment_key = jax.random.split(key, 3)
     noise = jax.random.normal(noise_key, normalised.shape)
-    augmented = jnp.concatenate([f(normalised) for f in augment], axis=-1)
+    # augmented = jnp.concatenate([f(normalised) for f in augment], axis=-1)
+    augmented, _, _ = vae.apply(vae_variables, normalised, augment_key, sample_posterior=False, train=False)
 
     # mean, std = -6.3, 1.9
 
