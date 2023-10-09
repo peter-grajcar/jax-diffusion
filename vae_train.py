@@ -48,7 +48,7 @@ if __name__ == "__main__":
     variables = vae.init(init_key, jnp.ones([1, 100, 32, 1]), dummy_key, sample_posterior=True, train=True)
 
     # Create optimiser
-    schedule = optax.cosine_decay_schedule(1e-3, args.epochs * args.epoch_batches, 1e-5)
+    schedule = optax.exponential_decay(1e-3, args.epoch_batches, 0.98)
     optimiser = optax.adamw(schedule, weight_decay=0.004, b1=0.9, b2=0.999, eps=1e-7)
 
     # Create training state
