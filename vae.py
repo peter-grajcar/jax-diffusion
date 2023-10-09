@@ -16,7 +16,7 @@ class TrainState(train_state.TrainState):
 def kl_divergence(mean, log_var):
     return 0.5 * (1 + log_var - mean ** 2 - jnp.exp(log_var)).sum(axis=-1)
 
-# @jax.jit
+@jax.jit
 def train_step(state, batch):
     def loss_fn(params):
         key, apply_key = jax.random.split(state.key)
