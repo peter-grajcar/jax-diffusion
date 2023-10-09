@@ -40,6 +40,7 @@ if __name__ == "__main__":
         config.stage_blocks,
         config.attention_stages,
         config.attention_heads,
+        config.scale_with_conv,
     )
 
     key, init_key, dummy_key = jax.random.split(key, 3)

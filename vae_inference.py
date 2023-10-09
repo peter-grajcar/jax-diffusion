@@ -25,6 +25,7 @@ if __name__ == "__main__":
         config.stage_blocks,
         config.attention_stages,
         config.attention_heads,
+        config.scale_with_conv,
     )
 
     variables = ckpt["ema_variables"]

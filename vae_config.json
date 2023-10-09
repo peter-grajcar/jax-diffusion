@@ -8,5 +8,6 @@
     "channels": 8,
     "attention_stages": 0,
     "attention_heads": 8,
-    "z_dim": 128
+    "z_dim": 128,
+    "scale_with_conv": true
 }

@@ -72,6 +72,7 @@ class Encoder(nn.Module):
     stage_blocks: int
     attention_stages: int
     attention_heads: int
+    scale_with_conv: bool
 
     @nn.compact
     def __call__(self, inputs, train=False):
@@ -85,7 +86,7 @@ class Encoder(nn.Module):
             if i >= len(self.stages) - self.attention_stages:
                 hidden = Attention(num_heads=self.attention_heads)(hidden, train)
 
-            hidden = Downsample(factor, use_conv=True)(hidden)
+            hidden = Downsample(factor, use_conv=self.scale_with_conv)(hidden)
 
         # Middle
         for _ in range(self.stage_blocks):
@@ -101,17 +102,18 @@ class Decoder(nn.Module):
     z_dim: int
     channels: int
     out_channels: int
-    stages: int
+    stages: tuple[int, int]
     stage_blocks: int
     attention_stages: int
     attention_heads: int
+    scale_with_conv: bool
 
     @nn.compact
     def __call__(self, inputs, train=False):
         hidden = nn.Conv(self.channels, (1, 1), padding="SAME")(inputs)
 
         for i, factor in reversed(list(enumerate(self.stages))):
-            hidden = Upsample(factor, use_conv=True)(hidden)
+            hidden = Upsample(factor, use_conv=self.scale_with_conv)(hidden)
 
             if i >= len(self.stages) - self.attention_stages:
                 hidden = Attention(num_heads=self.attention_heads)(hidden, train)

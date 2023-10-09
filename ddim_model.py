@@ -55,6 +55,34 @@ class ResidualBlock(nn.Module):
         hidden += residual
         return hidden
 
+class Downsample(nn.Module):
+    factor: tuple[int, int]
+    use_conv: bool = False
+
+    @nn.compact
+    def __call__(self, inputs):
+        if self.use_conv:
+            hidden = nn.Conv(inputs.shape[-1], (3, 3), strides=self.factor, padding="SAME")(inputs)
+        else:
+            hidden = nn.avg_pool(inputs, self.factor, strides=self.factor, padding="SAME")
+        return hidden
+
+class Upsample(nn.Module):
+    factor: tuple[int, int]
+    use_conv: bool = False
+
+    @nn.compact
+    def __call__(self, inputs):
+        hidden = jax.image.resize(
+            inputs,
+            [inputs.shape[0], inputs.shape[1] * self.factor[0], inputs.shape[2] * self.factor[1], inputs.shape[3]],
+             method="nearest"
+        )
+        if self.use_conv:
+            hidden = nn.Conv(hidden.shape[-1], (3, 3), padding="SAME")(hidden)
+        return hidden
+
+
 
 class DiffusionModel(nn.Module):
     stages: int
@@ -63,6 +91,7 @@ class DiffusionModel(nn.Module):
     out_channels: int = 3
     attention_stages: int = 0
     attention_heads: int = 8
+    scale_with_conv: bool = False
 
     @nn.compact
     def __call__(self, inputs, conditioning, noise_rates, train=True):
@@ -72,26 +101,26 @@ class DiffusionModel(nn.Module):
         hidden = nn.Conv(self.channels, (3, 3), padding="SAME")(inputs)
 
         outputs = []
-        for i in range(self.stages):
+        for i, factor in enumerate(self.stages):
             for _ in range(self.stage_blocks):
                 hidden = ResidualBlock(self.channels << i)(hidden, noise_embeddings, train)
                 outputs.append(hidden)
 
-            if i >= self.stages - self.attention_stages:
+            if i >= len(self.stages) - self.attention_stages:
                 hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
 
-            hidden = nn.Conv(self.channels << (i + 1), (3, 3), strides=(2, 2), padding="SAME")(hidden)
+            hidden = Downsample(factor, use_conv=self.scale_with_conv)(hidden)
 
         for _ in range(self.stage_blocks):
-            hidden = ResidualBlock(self.channels << self.stages)(hidden, noise_embeddings, train)
+            hidden = ResidualBlock(self.channels << len(self.stages))(hidden, noise_embeddings, train)
 
         if self.attention_stages > 0:
             hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
 
-        for i in reversed(range(self.stages)):
-            hidden = nn.ConvTranspose(self.channels << i, (4, 4), strides=(2, 2), padding="SAME")(hidden)
+        for i, factor in reversed(list(enumerate(self.stages))):
+            hidden = Upsample(factor, use_conv=self.scale_with_conv)(hidden)
 
-            if i >= self.stages - self.attention_stages:
+            if i >= len(self.stages) - self.attention_stages:
                 hidden = Attention(num_heads=self.attention_heads)(hidden, conditioning, train)
 
             for _ in range(self.stage_blocks):

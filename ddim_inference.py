@@ -81,13 +81,14 @@ if __name__ == "__main__":
 
     config = ckpt["config"]
 
-     model = DiffusionModel(
+    model = DiffusionModel(
         stages=config.stages,
         stage_blocks=config.stage_blocks,
         channels=config.channels,
         out_channels=1,
         attention_stages=config.attention_stages,
         attention_heads=config.attention_heads,
+        scale_with_conv=config.scale_with_conv,
     )
 
     variables = ckpt["ema_variables"]

@@ -70,6 +70,7 @@ def load_vae(ckpt_dir):
         config.stage_blocks,
         config.attention_stages,
         config.attention_heads,
+        config.scale_with_conv,
     )
 
     return vae, ckpt["ema_variables"]
@@ -98,6 +99,7 @@ if __name__ == "__main__":
         out_channels=1,
         attention_stages=config.attention_stages,
         attention_heads=config.attention_heads,
+        scale_with_conv=config.scale_with_conv,
     )
 
     key, init_key = jax.random.split(key)
